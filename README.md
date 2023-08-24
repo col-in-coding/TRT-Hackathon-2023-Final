@@ -8,6 +8,22 @@
 - 在Docker里面代码编译、运行步骤的完整说明
   - 请做到只要逐行运行你给的命令，就能把代码跑起来
 
+Repo: https://github.com/col-in-coding/TRT-Hackathon-2023-Final   
+
+Jobs: 用TensorRT-LLM实现新模型;为TensorRT-LLM添加新feature，或者在模型上启用了现有feature.
+
+Objective Model: [SAM](https://github.com/facebookresearch/segment-anything)
+
+Start Docker Environment
+
+```
+export PROJ_PATH=`pwd`
+docker run -it --rm --name=trt2023 \
+-v $PROJ_PATH:/workspace -w /workspace --gpus all --user root \
+registry.cn-hangzhou.aliyuncs.com/trt-hackathon/trt-hackathon:final_v1 bash
+```
+
+
 ### 主要开发工作
 
 #### 开发工作的难点
@@ -46,7 +62,7 @@
 
 ### Bug报告（可选）
 
-提交bug是对TensorRT/TensorRT-LLM的另一种贡献。发现的TensorRT/TensorRT-LLM或cookbook、或文档和教程相关bug，请提交到[github issues](https://github.com/NVIDIA/trt-samples-for-hackathon-cn/issues)，并请在这里给出链接。  
+提交bug是对TensorRT/TensorRT-LLM的另一种贡献。发现的TensorRT/TensorRT-LLM或cookbook、或文档和教程相关bug，请提交到[github issues](https://github.com/NVIDIA/trt-samples-for-hackathon-cn/issues)，并请在这里给出链接。
 
 对于每个bug，请标记上hackathon2023标签，并写好正文：
 
