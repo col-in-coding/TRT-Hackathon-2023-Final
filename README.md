@@ -1,152 +1,250 @@
-### 总述
+# TensorRT-LLM: A TensorRT toolbox for Large Language Models
 
-请简练地概括项目的主要贡献，使读者可以快速理解并复现你的工作，包括：
+## Table of Contents
 
-- 介绍本工作是 [NVIDIA TensorRT Hackathon 2023](https://github.com/NVIDIA/trt-samples-for-hackathon-cn/tree/master/Hackathon2023) 的参赛题目（请给出上述链接），并介绍具体选题是什么（参见“选题得分”小节，应为如下之一：1，2，3，4，2+4，3+4）
-    - 如果是优化新模型，原始模型的名称及链接，并对该模型做个简要介绍
-- 优化效果（例如给出精度和加速比），简单给出关键的数字即可，在这里不必详细展开
-- 在Docker里面代码编译、运行步骤的完整说明
-  - 请做到只要逐行运行你给的命令，就能把代码跑起来
+- [The TensorRT-LLM Overview](#the-tensorrt-llm-overview)
+- [Installation](#installation)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [Release notes](#release-notes)
+  - [Changelog](#changelog)
+  - [Known issues](#known-issues)
 
-Repo: https://github.com/col-in-coding/TRT-Hackathon-2023-Final
+## The TensorRT-LLM Overview
 
-Jobs: 用TensorRT-LLM实现新模型;为TensorRT-LLM添加新feature，或者在模型上启用了现有feature.
+TensorRT-LLM provides users with an easy-to-use Python API to define Large
+Language Models (LLMs) and build
+[TensorRT](https://developer.nvidia.com/tensorrt) engines that contain
+state-of-the-art optimizations to perform inference efficiently on NVIDIA GPUs.
+TensorRT-LLM also contains components to create Python and C++ runtimes that
+execute those TensorRT engines. It also includes a backend for integration with
+the [NVIDIA Triton Inference
+Server](https://developer.nvidia.com/nvidia-triton-inference-server).  Models
+built with TensorRT-LLM can be executed on a wide range of configurations going
+from a single GPU to multiple nodes with multiple GPUs (using Tensor
+Parallelism).
 
-Objective Model: [SAM](https://github.com/facebookresearch/segment-anything)
+The Python API of TensorRT-LLM is architectured to look similar to the
+[PyTorch](https://pytorch.org) API. It provides users with a
+[functional](./tensorrt_llm/functional.py) module containing functions like
+`einsum`, `softmax`, `matmul` or `view`. The [layer](./tensorrt_llm/layer)
+module bundles useful building blocks to assemble LLMs; like an `Attention`
+block, a `MLP` or the entire `Transformer` layer. Model-specific components,
+like `GPTAttention` or `BertAttention`, can be found in the
+[model](./tensorrt_llm/model) module.
 
-Start Docker Environment
+TensorRT-LLM provides users with predefined models that can easily be modified
+and extended. The current version of TensorRT-LLM supports
+[BERT](https://huggingface.co/docs/transformers/model_doc/bert),
+[GPT](https://huggingface.co/docs/transformers/model_doc/openai-gpt),
+[NVIDIA GPT-2B](https://huggingface.co/nvidia/GPT-2B-001),
+[GPT-J](https://huggingface.co/docs/transformers/model_doc/gptj),
+[LLaMA](https://huggingface.co/docs/transformers/model_doc/llama),
+[OPT](https://huggingface.co/docs/transformers/model_doc/opt),
+[SantaCoder](https://huggingface.co/bigcode/santacoder)
+and
+[StarCoder](https://huggingface.co/bigcode/starcoder).
+To maximize performance and reduce memory footprint, TensorRT-LLM allows the
+models to be executed using different quantization modes (see
+[`examples/gpt`](./examples/gpt) for concrete examples).  TensorRT-LLM supports
+INT4 or INT8 weights (and FP16 activations; a.k.a.  INT4/INT8 weight-only) as
+well as a complete implementation of the
+[SmoothQuant](https://arxiv.org/abs/2211.10438) technique.
+
+For a more detailed presentation of the software architecture and the key
+concepts used in TensorRT-LLM, we recommend you to read the following
+[document](./docs/architecture.md).
+
+## Installation
+
+### Docker Container
+
+We recommend that you use a [Docker](https://www.docker.com) container to build
+and run TensorRT-LLM. Instructions to install an environment to run Docker
+containers for the NVIDIA platform can be found
+[here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
+To create a Docker container to build and run TensorRT-LLM, you need to
+download the following packages from NVOnline:
+
+ * `polygraphy-0.48.1-py2.py3-none-any.whl`,
+ * `TensorRT-9.0.0.2.Linux.x86_64-gnu.cuda-12.2.tar.gz`.
+
+Copy those packages to the top-level directory of TensorRT-LLM. Then, use the
+following command:
+
+```bash
+DOCKER_BUILDKIT=1 docker build -t tensorrt_llm -f docker/Dockerfile.dev .
+```
+
+To run the container, use the following command:
+
+```bash
+docker run --gpus all --rm -it -v ${PWD}:/code/tensorrt_llm -w /code/tensorrt_llm tensorrt_llm bash
+```
+
+### Build from Source
+
+Make sure you have fetched all the dependencies before compiling TensorRT-LLM:
+
+```bash
+git submodule update --init --recursive
+```
+
+Once it is done, you can build the code from inside that container using:
+
+```bash
+# To build the TensorRT-LLM code.
+./scripts/build_wheel.py --trt_root /usr/local/TensorRT-9.0.0.2
+
+# Deploy TensorRT-LLM in your environment.
+pip install ./build/tensorrt_llm*.whl
+```
+
+By default, `build_wheel.py` enables incremental builds. To clean the build
+directory, add the `--clean` option:
+
+```bash
+./scripts/build_wheel.py --clean --trt_root /usr/local/TensorRT-9.0.0.2
 
 ```
-export PROJ_PATH=`pwd`
-docker run -it --rm --name=trt2023 \
--v $PROJ_PATH:/workspace -w /workspace --gpus all --user root \
-registry.cn-hangzhou.aliyuncs.com/trt-hackathon/trt-hackathon:final_v1 bash
+
+### Building for Specific CUDA Architectures
+
+Specific CUDA architectures may be passed as an argument to
+[`build_wheel.py`](scripts/build_wheel.py). The script accepts a single
+argument taking a semicolon separated list of CUDA architecture specifications
+compatible with [CUDA_ARCHITECTURES in CMake].  For instance, to build for
+compute capabilities 8.0 and 8.6, call `build_wheel.py` like so:
+
+```bash
+./scripts/build_wheel.py --cuda_architectures "80-real;86-real" --trt_root /usr/local/TensorRT-9.0.0.2
 ```
 
+### Building and Linking against the C++ Runtime of TensorRT-LLM
 
-### 主要开发工作
+Running `build_wheel.py` will also compile the library containing the C++
+runtime of TensorRT-LLM. If Python support and `torch` modules are not
+required, the script provides the option `--cpp_only` which restricts the build
+to the C++ runtime only:
 
-#### 开发工作的难点
+```bash
+./scripts/build_wheel.py --cuda_architectures "80-real;86-real" --cpp_only --clean --trt_root /usr/local/TensorRT-9.0.0.2
+```
 
-请在这一节里总结你的工作难点与亮点。
-- 如果使用 TensorRT 进行优化，请介绍一下在模型在导出时、或用polygraphy/trtexec解析时，或在使用TensorRT中，遇到了什么问题并解决了。换句话说，针对这个模型，我们为什么需要额外的工程手段。
-- 如果使用 TensorRT-LLM 进行优化，描述以下方面可供选手参考：如果搭建了新模型， 请介绍模型结构有无特别之处，在模型的搭建过程中使用了什么算子，有没有通过plugin支持的新算子。如果支持新feature，请介绍这个feature具体需要修改哪些模块才能实现。如果优化已有模型，请介绍模型性能瓶颈以及解决方法。另外还可以包含工程实现以及debug过程中的难点。
+This is particularly useful to avoid linking problems which may be introduced
+by particular versions of `torch` related to the [dual ABI support of
+GCC](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html). The
+option `--clean` will remove the build directory before building. The default
+build directory is `cpp/build`, which may be overridden using the option
+`--build_dir`. Run `build_wheel.py --help` for an overview of all supported
+options.
 
-### 开发与优化过程
+Clients may choose to link against the shared or the static version of the
+library. These libraries can be found in the following locations:
 
-这一部分是报告的主体。请把自己假定为老师，为 TensorRT 或 TensorRT-LLM 的初学者讲述如何从原始模型出发，经过一系列开发步骤，得到优化后的 TensorRT 或 TensorRT-LLM 模型。或者你是如何一步步通过修改哪些模块添加了新feature的。
+```bash
+cpp/build/tensorrt_llm/libtensorrt_llm.so
+cpp/build/tensorrt_llm/libtensorrt_llm_static.a
+```
 
-建议：
+In addition, one needs to link against the library containing the LLM plugins
+for TensorRT available here:
 
-- 分步骤讲清楚开发过程
-- 最好能介绍为什么需要某个特别步骤，通过这个特别步骤解决了什么问题
-  - 比如，通过Nsight Systems绘制timeline做了性能分析，发现attention时间占比高且有优化空间（贴图展示分析过程），所以决定要写plugin。然后介绍plugin的设计与实现，并在timeline上显示attention这一部分的性能改进。
+```bash
+cpp/build/tensorrt_llm/plugins/libnvinfer_plugin.so
+```
 
-### 优化效果
+Add the following directories to your project include paths
 
-这一部分介绍你的工作在云主机上的运行效果。如果是优化模型，需要分两部分说明：
+```bash
+cpp
+cpp/include
+```
 
-- 精度：报告与原始模型进行精度对比测试的结果，验证精度达标。
-  - 如果选用TensorRT-LLM，请跑summarize任务并使用 [Rouge](https://huggingface.co/spaces/evaluate-metric/rouge) 来对比模型优化前后的精度差距。如果精度良好，原始模型与优化模型的Rouge score的差异一般在1以内。例子见 TensorRT-LLM docker 中 /root/workspace/tensorrt_llm_july-release-v1/examples/gpt/summarize.py
-  - 如果选用TensorRT，这里的精度测试指的是针对“原始模型”和“TensorRT优化模型”分别输出的数据（tensor）进行数值比较。请给出绝对误差和相对误差的统计结果（至少包括最大值、平均值与中位数）。
-    - 使用训练好的权重和有意义的输入数据更有说服力。如果选手使用了随机权重和输入数据，请在这里注明。
-    - 在精度损失较大的情况下，鼓励选手用训练好的权重和测试数据集对模型优化前与优化后的准确度指标做全面比较，以增强说服力。
-- 性能：例如可以用图表展示不同batch size或sequence length下性能加速效果（考虑到可能模型可能比较大，可以只给batch size为1的数据）
-  - 一般用原始模型作为baseline
-  - 一般提供模型推理时间的加速比即可；若能提供压力测试下的吞吐提升则更好。
+Only header files contained in `cpp/include` are part of the supported API and
+may be directly included. Other headers contained under `cpp` should not be
+included directly since they might change in future versions.
 
-请注意：
+For examples of how to use the C++ runtime, see the unit tests in
+[gptSessionTest.cpp](cpp/tests/runtime/gptSessionTest.cpp) and the related
+[CMakeLists.txt](cpp/tests/CMakeLists.txt) file.
 
-- 相关测试代码也需要包含在代码仓库中，可被复现。
-- 请写明云主机的软件硬件环境，方便他人参考。
+## Examples
 
-### Bug报告（可选）
+- [Bert](examples/bert)
+- [BLOOM](examples/bloom)
+- [ChatGLM-6B](examples/chatglm6b)
+- [GPT](examples/gpt)
+- [GPT-J](examples/gptj)
+- [GPT-NeoX](examples/gptneox)
+- [LLaMA](examples/llama)
+- [OpenAI Triton](examples/openai_triton)
+- [OPT](examples/opt)
 
-提交bug是对TensorRT/TensorRT-LLM的另一种贡献。发现的TensorRT/TensorRT-LLM或cookbook、或文档和教程相关bug，请提交到[github issues](https://github.com/NVIDIA/trt-samples-for-hackathon-cn/issues)，并请在这里给出链接。
+## Troubleshooting
 
-对于每个bug，请标记上hackathon2023标签，并写好正文：
+- It's recommended to add options `–shm-size=1g –ulimit memlock=-1` to the
+  docker or nvidia-docker run command.  Otherwise you may see NCCL errors when
+  running multiple GPU inferences, see
+  https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/troubleshooting.html#errors
+  for details.
 
-- 对于cookbook或文档和教程相关bug，说清楚问题即可，不必很详细。
-- 对于TensorRT bug，首先确认在云主机上使用NGC docker + TensorRT 9.0.0.1可复现。
-- 然后填写如下模板，并请导师复核确认（前面“评分标准”已经提到，确认有效可得附加分）：
-  - Environment
-    - TensorRT 9.0.0.1
-    - Versions of CUDA, CUBLAS, CuDNN used
-    - Container used
-    - NVIDIA driver version
-  - Reproduction Steps
-    - Provide detailed reproduction steps for the issue here, including any commands run on the command line.
-  - Expected Behavior
-    - Provide a brief summary of the expected behavior of the software. Provide output files or examples if possible.
-  - Actual Behavior
-    - Describe the actual behavior of the software and how it deviates from the expected behavior. Provide output files or examples if possible.
-  - Additional Notes
-    - Provide any additional context here you think might be useful for the TensorRT team to help debug this issue (such as experiments done, potential things to investigate).
+- If you encounter
+```text
+NVIDIA H100 PCIe with CUDA capability sm_90 is not compatible with the current PyTorch installation. The current PyTorch install supports CUDA capabilities sm_37 sm_50 sm_60 sm_70 sm_75 sm_80 sm_86.
+```
 
-### 送分题答案（可选）
+when building engines, you need to install the preview version of PyTorch that
+corresponds to your CUDA version.  As an example, for CUDA 12.1, use:
 
--  root/workspace/tensorrt_llm_july-release-v1/examples/gpt/README 里面 “Single node, single GPU” 部分如下命令的输出（10分）模型为gpt2-medium,
-    - `python3 run.py --max_output_len=8`
-    - result
-    ```
-    Input: Born in north-east France, Soyer trained as a
-    Output:  chef and eventually became a chef at a
-    ```
+```bash
+pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
+```
 
-- /root/workspace/tensorrt_llm_july-release-v1/examples/gpt/README 里面 “Summarization using the GPT model” 部分如下命令的rouge 分数（10分）模型为gpt2-medium
-    - `python3 summarize.py --engine_dir trt_engine/gpt2/fp16/1-gpu --test_hf --batch_size1 --test_trt_llm --hf_model_location=gpt2 --check_accuracy --tensorrt_llm_rouge1_threshold=14`
-    - result
-    ```
-    [08/25/2023-07:31:55] Reusing dataset cnn_dailymail (data/ccdv___cnn_dailymail/3.0.0/3.0.0/0107f7388b5c6fae455a5661bcd134fc22da53ea75852027040d8d1e997f101f)
-    100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████| 3/3 [00:00<00:00, 647.00it/s]
-    [08/25/2023-07:31:55] [TRT] [I] Loaded engine size: 311 MiB
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] Init cuBLAS/cuBLASLt: CPU +6, GPU +10, now: CPU 536, GPU 1100 (MiB)
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] Init cuDNN: CPU +2, GPU +10, now: CPU 538, GPU 1110 (MiB)
-    [08/25/2023-07:31:55] [TRT] [W] TensorRT was linked against cuDNN 8.9.2 but loaded cuDNN 8.9.0
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] TensorRT-managed allocation in engine deserialization: CPU +0, GPU +310, now: CPU 0, GPU 310 (MiB)
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] Init cuBLAS/cuBLASLt: CPU +1, GPU +8, now: CPU 538, GPU 1744 (MiB)
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] Init cuDNN: CPU +0, GPU +8, now: CPU 538, GPU 1752 (MiB)
-    [08/25/2023-07:31:55] [TRT] [W] TensorRT was linked against cuDNN 8.9.2 but loaded cuDNN 8.9.0
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] TensorRT-managed allocation in IExecutionContext creation: CPU +0, GPU +0, now: CPU 0, GPU 310 (MiB)
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] Init cuBLAS/cuBLASLt: CPU +0, GPU +8, now: CPU 539, GPU 1760 (MiB)
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] Init cuDNN: CPU +1, GPU +10, now: CPU 540, GPU 1770 (MiB)
-    [08/25/2023-07:31:55] [TRT] [W] TensorRT was linked against cuDNN 8.9.2 but loaded cuDNN 8.9.0
-    [08/25/2023-07:31:55] [TRT] [I] [MemUsageChange] TensorRT-managed allocation in IExecutionContext creation: CPU +0, GPU +0, now: CPU 0, GPU 310 (MiB)
-    huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
-    To disable this warning, you can either:
-            - Avoid using `tokenizers` before the fork if possible
-            - Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
-    [08/25/2023-07:32:00] [TRT-LLM] [I] ---------------------------------------------------------
-    [08/25/2023-07:32:00] [TRT-LLM] [I] TensorRT-LLM Generated : 
-    [08/25/2023-07:32:00] [TRT-LLM] [I]  Input : ['(CNN)James Best, best known for his portrayal of bumbling sheriff Rosco P. Coltrane on TV\'s "The Dukes of Hazzard," died Monday after a brief illness. He was 88. Best died in hospice in Hickory, North Carolina, of complications from pneumonia, said Steve Latshaw, a longtime friend and Hollywood colleague. Although he\'d been a busy actor for decades in theater and in Hollywood, Best didn\'t become famous until 1979, when "The Dukes of Hazzard\'s" cornpone charms began beaming into millions of American homes almost every Friday night. For seven seasons, Best\'s Rosco P. Coltrane chased the moonshine-running Duke boys back and forth across the back roads of fictitious Hazzard County, Georgia, although his "hot pursuit" usually ended with him crashing his patrol car. Although Rosco was slow-witted and corrupt, Best gave him a childlike enthusiasm that got laughs and made him endearing. His character became known for his distinctive "kew-kew-kew" chuckle and for goofy catchphrases such as "cuff \'em and stuff \'em!" upon making an arrest. Among the most popular shows on TV in the early \'80s, "The Dukes of Hazzard" ran until 1985 and spawned TV movies, an animated series and video games. Several of Best\'s "Hazzard" co-stars paid tribute to the late actor on social media. "I laughed and learned more from Jimmie in one hour than from anyone else in a whole year," co-star John Schneider, who played Bo Duke, said on Twitter. "Give Uncle Jesse my love when you see him dear friend." "Jimmy Best was the most constantly creative person I have ever known," said Ben Jones, who played mechanic Cooter on the show, in a Facebook post. "Every minute of his long life was spent acting, writing, producing, painting, teaching, fishing, or involved in another of his life\'s many passions." Born Jewel Guy on July 26, 1926, in Powderly, Kentucky, Best was orphaned at 3 and adopted by Armen and Essa Best, who renamed him James and raised him in rural Indiana. Best served in the Army during World War II before launching his acting career. In the 1950s and 1960s, he accumulated scores of credits, playing a range of colorful supporting characters in such TV shows as "The Twilight Zone," "Bonanza," "The Andy Griffith Show" and "Gunsmoke." He later appeared in a handful of Burt Reynolds\' movies, including "Hooper" and "The End." But Best will always be best known for his "Hazzard" role, which lives on in reruns. "Jimmie was my teacher, mentor, close friend and collaborator for 26 years," Latshaw said. "I directed two of his feature films, including the recent \'Return of the Killer Shrews,\' a sequel he co-wrote and was quite proud of as he had made the first one more than 50 years earlier." People we\'ve lost in 2015 . CNN\'s Stella Chan contributed to this story.']
-    [08/25/2023-07:32:00] [TRT-LLM] [I] 
-    Reference : ['James Best, who played the sheriff on "The Dukes of Hazzard," died Monday at 88 .\n"Hazzard" ran from 1979 to 1985 and was among the most popular shows on TV .']
-    [08/25/2023-07:32:00] [TRT-LLM] [I] 
-    Output : [[' Best died at age 88.']]
-    [08/25/2023-07:32:00] [TRT-LLM] [I] ---------------------------------------------------------
-    [08/25/2023-07:32:00] [TRT-LLM] [I] ---------------------------------------------------------
-    [08/25/2023-07:32:00] [TRT-LLM] [I] HF Generated : 
-    [08/25/2023-07:32:00] [TRT-LLM] [I]  Input : ['(CNN)James Best, best known for his portrayal of bumbling sheriff Rosco P. Coltrane on TV\'s "The Dukes of Hazzard," died Monday after a brief illness. He was 88. Best died in hospice in Hickory, North Carolina, of complications from pneumonia, said Steve Latshaw, a longtime friend and Hollywood colleague. Although he\'d been a busy actor for decades in theater and in Hollywood, Best didn\'t become famous until 1979, when "The Dukes of Hazzard\'s" cornpone charms began beaming into millions of American homes almost every Friday night. For seven seasons, Best\'s Rosco P. Coltrane chased the moonshine-running Duke boys back and forth across the back roads of fictitious Hazzard County, Georgia, although his "hot pursuit" usually ended with him crashing his patrol car. Although Rosco was slow-witted and corrupt, Best gave him a childlike enthusiasm that got laughs and made him endearing. His character became known for his distinctive "kew-kew-kew" chuckle and for goofy catchphrases such as "cuff \'em and stuff \'em!" upon making an arrest. Among the most popular shows on TV in the early \'80s, "The Dukes of Hazzard" ran until 1985 and spawned TV movies, an animated series and video games. Several of Best\'s "Hazzard" co-stars paid tribute to the late actor on social media. "I laughed and learned more from Jimmie in one hour than from anyone else in a whole year," co-star John Schneider, who played Bo Duke, said on Twitter. "Give Uncle Jesse my love when you see him dear friend." "Jimmy Best was the most constantly creative person I have ever known," said Ben Jones, who played mechanic Cooter on the show, in a Facebook post. "Every minute of his long life was spent acting, writing, producing, painting, teaching, fishing, or involved in another of his life\'s many passions." Born Jewel Guy on July 26, 1926, in Powderly, Kentucky, Best was orphaned at 3 and adopted by Armen and Essa Best, who renamed him James and raised him in rural Indiana. Best served in the Army during World War II before launching his acting career. In the 1950s and 1960s, he accumulated scores of credits, playing a range of colorful supporting characters in such TV shows as "The Twilight Zone," "Bonanza," "The Andy Griffith Show" and "Gunsmoke." He later appeared in a handful of Burt Reynolds\' movies, including "Hooper" and "The End." But Best will always be best known for his "Hazzard" role, which lives on in reruns. "Jimmie was my teacher, mentor, close friend and collaborator for 26 years," Latshaw said. "I directed two of his feature films, including the recent \'Return of the Killer Shrews,\' a sequel he co-wrote and was quite proud of as he had made the first one more than 50 years earlier." People we\'ve lost in 2015 . CNN\'s Stella Chan contributed to this story.']
-    [08/25/2023-07:32:00] [TRT-LLM] [I] 
-    Reference : ['James Best, who played the sheriff on "The Dukes of Hazzard," died Monday at 88 .\n"Hazzard" ran from 1979 to 1985 and was among the most popular shows on TV .']
-    [08/25/2023-07:32:00] [TRT-LLM] [I] 
-    Output : [[' Best died at age 88.']]
-    [08/25/2023-07:32:00] [TRT-LLM] [I] ---------------------------------------------------------
-    Token indices sequence length is longer than the specified maximum sequence length for this model (1151 > 1024). Running this sequence through the model will result in indexing errors
-    [08/25/2023-07:32:19] [TRT-LLM] [I] TensorRT-LLM (total latency: 2.181581735610962 sec)
-    [08/25/2023-07:32:19] [TRT-LLM] [I] TensorRT-LLM beam 0 result
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rouge1 : 14.700185379688484
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rouge2 : 3.75886473151702
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rougeL : 12.002855916633356
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rougeLsum : 13.092895095507263
-    [08/25/2023-07:32:19] [TRT-LLM] [I] Hugging Face (total latency: 12.6636061668396 sec)
-    [08/25/2023-07:32:19] [TRT-LLM] [I] HF beam 0 result
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rouge1 : 14.75593024343394
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rouge2 : 3.3647470801871733
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rougeL : 11.124766996533
-    [08/25/2023-07:32:19] [TRT-LLM] [I]   rougeLsum : 13.031128048110618
-    ```
+[CUDA_ARCHITECTURES in CMake]: https://cmake.org/cmake/help/latest/prop_tgt/CUDA_ARCHITECTURES.html#prop_tgt:CUDA_ARCHITECTURES
 
-### 经验与体会（可选）
+## Release notes
 
-欢迎在这里总结经验，抒发感慨。
+### Changelog
+
+**July 2023**
+
+  - TensorRT-LLM requires TensorRT 9.0,
+  - Support for BLOOM, ChatGLM 6B, GPT-NeoX, LLaMA v2,
+  - Support for BF16 and FP8 models,
+  - Support for in-flight batching,
+  - Support for a new C++ Triton Backend,
+  - Refactoring of the KV cache to support pagging,
+    - The KV cache is now decomposed into blocks,
+    - The layout of the K cache has changed to `[batch_size, num_heads, seq_length, dim_per_head]`,
+  - Support for multi-GPU embeddings,
+  - Support for embedding sharing (input embedding and LM head),
+  - New example that shows how to integrate an OpenAI Triton kernel into TensorRT-LLM,
+  - Improved documentation (Docstrings in `functional.py` and documentation in `docs`)
+
+**June 2023**
+
+  - Support Nemo-GPT Next, SantaCoder, StarCoder in FP16,
+  - Support for a new C++ Runtime (with streaming support),
+  - Support for beam-search,
+  - Support for Multiquery Attention (MQA),
+  - Support for RoPE,
+  - Support for INT8 KV Cache,
+  - Support INT4 weight-only (with GPT example), but the weight-only kernels will not be optimal on hopper
+
+**May 2023**
+
+  - **The initial release of TensorRT-LLM**
+  - Support GPT, BERT, OPT, LLaMA in FP16,
+  - Support single-node multi-GPU GPT, OPT, BERT, LLaMA FP16 using Tensor parallelism,
+  - Support Triton Inference Server with a Python backend,
+  - Support sampling features, including top-k, top-p, temperature, and sampling penalty,
+  - Attention support
+   - Optimized Flash-Attention-based Multihead Attention for Ampere, Ada and Hopper architectures,
+   - Multi-Query Attention (MQA),
+   - ALiBi in Multihead-Attention,
+  - Support SmoothQuant INT8 (with GPT example),
+  - Support INT8 weight-only (with GPT example), but the weight-only kernels will not be optimal on hopper
+
+### Known issues

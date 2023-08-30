@@ -390,6 +390,11 @@ def build_rank_engine(builder: Builder,
             prompt_embedding_table_size=args.max_prompt_embedding_table_size)
         tensorrt_llm_gpt(*inputs)
 
+    network_ = network.trt_network
+    for i in range(network_.num_layers):
+        layer = network_.get_layer(i)
+        print("===> ", layer.name, layer.type)
+
     engine = None
 
     # Network -> Engine
