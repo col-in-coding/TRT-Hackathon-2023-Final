@@ -24,13 +24,20 @@ docker run -it --rm --name=trt2023 \
 registry.cn-hangzhou.aliyuncs.com/trt-hackathon/trt-hackathon:final_v1 bash
 ```
 
-Download weights from SAM repository
+Install segment-anything and download weights from SAM repository
 
 ```bash
 rm -rf sam && git clone https://github.com/facebookresearch/segment-anything sam
+cd sam && pip install -e . && cd -
 mkdir -p sam_models
 pushd sam_models && rm sam_vit_h_4b8939.pth && wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth && popd
 
+```
+
+Convert params
+
+```bash
+python params_convert.py
 ```
 
 ### 主要开发工作

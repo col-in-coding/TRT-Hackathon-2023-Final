@@ -1,13 +1,10 @@
-import argparse
-import configparser
-import dataclasses
-import os
-from pathlib import Path
-
 import torch
-from tqdm import tqdm
+import argparse
+import dataclasses
 from pathlib import Path
-from torch_model import TorchModel
+from functools import partial
+from collections import OrderedDict
+from segment_anything.modeling.image_encoder import ImageEncoderViT
 from tensorrt_llm._utils import str_dtype_to_torch, torch_to_numpy
 
 @dataclasses.dataclass(frozen=True)
@@ -36,7 +33,7 @@ class ProgArgs:
                             '-i',
                             type=str,
                             help='file name of input checkpoint file',
-                            default="state_dict.ckpt")
+                            default="sam_models/sam_vit_h_4b8939.pth")
                             # required=True)
         parser.add_argument(
             "--smoothquant",
@@ -59,13 +56,40 @@ class ProgArgs:
 def sam_to_ft_name(orig_name):
     return orig_name
 
+
+def fetch_image_encoder_params(sam_ckpt):
+    state_dict = torch.load(sam_ckpt, map_location="cpu")
+    if "state_dict" in state_dict:
+        state_dict = state_dict["state_dict"]
+    new_dict = OrderedDict()
+    for key in state_dict.keys():
+        if key.startswith("image_encoder."):
+            new_key = key.replace("image_encoder.", "")
+            new_dict[new_key] = state_dict[key]
+    return new_dict
+
+
 @torch.no_grad()
 def run_conversion(args):
     save_dir = Path(args.out_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    model = TorchModel()
-    model.load_state_dict(torch.load("state_dict.ckpt", map_location="cpu"))
+    model = ImageEncoderViT(
+        depth=32,
+        embed_dim=1280,
+        img_size=1024,
+        mlp_ratio=4,
+        norm_layer=partial(torch.nn.LayerNorm, eps=1e-6),
+        num_heads=16,
+        patch_size=16,
+        qkv_bias=True,
+        use_rel_pos=True,
+        global_attn_indexes=[7, 15, 23, 31],
+        window_size=14,
+        out_chans=256
+    )
+    state_dict = fetch_image_encoder_params(args.in_file)
+    model.load_state_dict(state_dict)
 
     storage_type = str_dtype_to_torch(args.storage_type)
 
