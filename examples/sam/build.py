@@ -6,7 +6,7 @@ from tensorrt_llm.network import net_guard
 from tensorrt_llm.builder import Builder
 from tensorrt_llm.logger import logger
 from tensorrt_llm._utils import str_dtype_to_np
-from models.segment_anything.model import TestModel
+from models.segment_anything.model import ImageEncoderViT
 
 logger.set_level("info")
 
@@ -31,15 +31,17 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
         p = dir_path + '/' + name
         if Path(p).exists():
             t = np.fromfile(p, dtype=dtype)
+            print("===> ", p, t.shape)
             if shape is not None:
                 t = t.reshape(shape)
             return t
+        logger.error(f"Param file not found: {p}")
         return None
 
-    tensorrt_llm_sam.layernorm.bias.value = (fromfile(
-        dir_path, "layernorm.bias.bin"))
-    tensorrt_llm_sam.layernorm.weight.value = (fromfile(
-        dir_path, "layernorm.weight.bin"))
+    tensorrt_llm_sam.patch_embed.proj.bias.value = fromfile(
+        dir_path, "patch_embed.proj.bias.bin")
+    tensorrt_llm_sam.patch_embed.proj.weight.value = fromfile(
+        dir_path, "patch_embed.proj.weight.bin", (1280, 3, 16, 16))
 
     tok = time.time()
     t = time.strftime('%H:%M:%S', time.gmtime(tok - tik))
@@ -49,13 +51,17 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
 if __name__ == "__main__":
 
     engine_dir = "sam_outputs"
-    engine_name = "test.engine"
+    engine_name = "sam_vit_h.engine"
     model_dir = "c-model"
     dtype = "float32"
     engine_dir = Path(engine_dir)
     engine_path = engine_dir / engine_name
     # Build TRT network
-    trt_llm_model = TestModel()
+    trt_llm_model = ImageEncoderViT(
+        img_size=1024,
+        patch_size=16,
+        embed_dim=1280
+    )
     load_from_ft(trt_llm_model, model_dir, dtype)
 
     # Module -> Network

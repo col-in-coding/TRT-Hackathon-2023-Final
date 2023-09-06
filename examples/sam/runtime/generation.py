@@ -81,10 +81,10 @@ class SAMGenerationSession(object):
 
     def _get_context_shape_buffer(self, inp):
         ctx_shape = {
-            "input": inp.shape
+            "input_image": inp.shape
         }
         ctx_buffer = {
-            "input": inp.contiguous(),
+            "input_image": inp.contiguous(),
             "output": self.buffer['output']
         }
         return ctx_shape, ctx_buffer
