@@ -1,8 +1,10 @@
+import numpy as np
 from typing import Optional, Tuple, Type
 from tensorrt_llm import Module
+from tensorrt_llm.parameter import Parameter
 from tensorrt_llm.layers import LayerNorm, Conv2d
 from tensorrt_llm.functional import Tensor
-from tensorrt_llm._utils import str_dtype_to_trt
+from tensorrt_llm._utils import str_dtype_to_trt, str_dtype_to_np
 
 
 class TestModel(Module):
@@ -39,15 +41,13 @@ class ImageEncoderViT(Module):
         mlp_ratio: float = 4.0,
         out_chans: int = 256,
         qkv_bias: bool = True,
-        use_abs_pos: bool = True,
         use_rel_pos: bool = False,
         rel_pos_zero_init: bool = True,
         window_size: int = 0,
         dtype: str = "float32"
     ) -> None:
         super().__init__()
-        dtype = str_dtype_to_trt('float32')
-        self.dtype = dtype
+        self.dtype = str_dtype_to_trt(dtype)
         self.img_size = img_size
 
         self.patch_embed = PatchEmbed(
@@ -55,13 +55,16 @@ class ImageEncoderViT(Module):
             stride=(patch_size, patch_size),
             in_chans=in_chans,
             embed_dim=embed_dim,
-            dtype=dtype
+            dtype=self.dtype
         )
+
+        self.pos_embed = Parameter(
+            shape=(1, img_size // patch_size, img_size // patch_size, embed_dim),
+            dtype=self.dtype)
 
     def forward(self, x: Tensor):
         x = self.patch_embed(x)
-        # if self.pos_embed is not None:
-        #     x = x + self.pos_embed
+        x = x + self.pos_embed.value
 
         # for blk in self.blocks:
         #     x = blk(x)

@@ -42,6 +42,9 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
         dir_path, "patch_embed.proj.bias.bin")
     tensorrt_llm_sam.patch_embed.proj.weight.value = fromfile(
         dir_path, "patch_embed.proj.weight.bin", (1280, 3, 16, 16))
+    tensorrt_llm_sam.pos_embed.value = fromfile(
+        dir_path, "pos_embed.bin", (1, 64, 64, 1280)
+    )
 
     tok = time.time()
     t = time.strftime('%H:%M:%S', time.gmtime(tok - tik))
