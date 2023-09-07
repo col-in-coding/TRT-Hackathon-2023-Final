@@ -31,8 +31,11 @@ from runtime.generation import ModelConfig, SAMGenerationSession
 if __name__ == "__main__":
 
     data = torch.load("data.pt")
+    data2 = torch.load("data2.pt")
+
     inp = data["inp"]
-    out = data["x"]
+    # out = data["x"]
+    out = data2["x"]
     print("===> valid: ", out.sum())
 
     engine_name = "sam_vit_h.engine"

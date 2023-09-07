@@ -1,10 +1,12 @@
-import numpy as np
-from typing import Optional, Tuple, Type
-from tensorrt_llm import Module
+import tensorrt as trt
+from typing import Optional, Tuple, Union
+from tensorrt_llm.module import Module, ModuleList
 from tensorrt_llm.parameter import Parameter
 from tensorrt_llm.layers import LayerNorm, Conv2d
 from tensorrt_llm.functional import Tensor
-from tensorrt_llm._utils import str_dtype_to_trt, str_dtype_to_np
+from tensorrt_llm._utils import str_dtype_to_trt
+
+from .functional import window_partition
 
 
 class TestModel(Module):
@@ -44,7 +46,8 @@ class ImageEncoderViT(Module):
         use_rel_pos: bool = False,
         rel_pos_zero_init: bool = True,
         window_size: int = 0,
-        dtype: str = "float32"
+        global_attn_indexes: Tuple[int, ...] = (),
+        dtype: Union[str, trt.DataType] = "float32"
     ) -> None:
         super().__init__()
         self.dtype = str_dtype_to_trt(dtype)
@@ -62,12 +65,29 @@ class ImageEncoderViT(Module):
             shape=(1, img_size // patch_size, img_size // patch_size, embed_dim),
             dtype=self.dtype)
 
+        blocks = []
+        # FOR TEST
+        depth = 1
+        for i in range(depth):
+            block = Block(
+                dim=embed_dim,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                qkv_bias=qkv_bias,
+                use_rel_pos=use_rel_pos,
+                rel_pos_zero_init=rel_pos_zero_init,
+                window_size=window_size if i not in global_attn_indexes else 0,
+                input_size=(img_size // patch_size, img_size // patch_size),
+            )
+            blocks.append(block)
+        self.blocks = ModuleList(blocks)
+
     def forward(self, x: Tensor):
         x = self.patch_embed(x)
         x = x + self.pos_embed.value
 
-        # for blk in self.blocks:
-        #     x = blk(x)
+        for blk in self.blocks:
+            x = blk(x)
 
         # x = self.neck(x.permute(0, 3, 1, 2))
 
@@ -84,6 +104,36 @@ class ImageEncoderViT(Module):
         return (inp, )
 
 
+class Block(Module):
+
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int,
+        mlp_ratio: float = 4.0,
+        qkv_bias: bool = True,
+        use_rel_pos: bool = False,
+        rel_pos_zero_init: bool = True,
+        window_size: int = 0,
+        input_size: Optional[Tuple[int, int]] = None,
+        dtype: Union[str, trt.DataType] = "float32"
+    ) -> None:
+        super().__init__()
+        self.norm1 = LayerNorm(dim, dtype=dtype)
+        self.window_size = window_size
+
+    def forward(self, x):
+        # shortcut = x
+        x = self.norm1(x)
+
+        # Window partition
+        # H, W = x.shape[1], x.shape[2]
+        x, pad_hw = window_partition(x, self.window_size)
+
+        # Reverse window partition
+        return x
+
+
 class PatchEmbed(Module):
     """
     Image to Patch Embedding.
@@ -96,7 +146,7 @@ class PatchEmbed(Module):
         padding: Tuple[int, int] = (0, 0),
         in_chans: int = 3,
         embed_dim: int = 768,
-        dtype: str = "float32"
+        dtype: Union[str, trt.DataType] = "float32"
     ) -> None:
         """
         Args:

@@ -38,12 +38,19 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
         logger.error(f"Param file not found: {p}")
         return None
 
-    tensorrt_llm_sam.patch_embed.proj.bias.value = fromfile(
-        dir_path, "patch_embed.proj.bias.bin")
     tensorrt_llm_sam.patch_embed.proj.weight.value = fromfile(
         dir_path, "patch_embed.proj.weight.bin", (1280, 3, 16, 16))
+    tensorrt_llm_sam.patch_embed.proj.bias.value = fromfile(
+        dir_path, "patch_embed.proj.bias.bin")
     tensorrt_llm_sam.pos_embed.value = fromfile(
         dir_path, "pos_embed.bin", (1, 64, 64, 1280)
+    )
+
+    tensorrt_llm_sam.blocks[0].norm1.weight.value = fromfile(
+        dir_path, "blocks.0.norm1.weight.bin"
+    )
+    tensorrt_llm_sam.blocks[0].norm1.bias.value = fromfile(
+        dir_path, "blocks.0.norm1.bias.bin"
     )
 
     tok = time.time()
@@ -63,7 +70,9 @@ if __name__ == "__main__":
     trt_llm_model = ImageEncoderViT(
         img_size=1024,
         patch_size=16,
-        embed_dim=1280
+        embed_dim=1280,
+        window_size=14,
+        global_attn_indexes=[7, 15, 23, 31]
     )
     load_from_ft(trt_llm_model, model_dir, dtype)
 

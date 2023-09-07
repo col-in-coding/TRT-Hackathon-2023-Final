@@ -94,9 +94,9 @@ def run_conversion(args):
     storage_type = str_dtype_to_torch(args.storage_type)
 
     for name, param in model.named_parameters():
-        if "weight" not in name and "bias" not in name:
-            print("useless name: ", name)
-            continue
+        # if "weight" not in name and "bias" not in name:
+        #     print("useless name: ", name)
+        #     continue
         print("===> ", name)
         ft_name = sam_to_ft_name(name)
 
