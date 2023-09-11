@@ -46,11 +46,31 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
         dir_path, "pos_embed.bin", (1, 64, 64, 1280)
     )
 
+    # Blocks
     tensorrt_llm_sam.blocks[0].norm1.weight.value = fromfile(
         dir_path, "blocks.0.norm1.weight.bin"
     )
     tensorrt_llm_sam.blocks[0].norm1.bias.value = fromfile(
         dir_path, "blocks.0.norm1.bias.bin"
+    )
+
+    tensorrt_llm_sam.blocks[0].attn.rel_pos_h.value = fromfile(
+        dir_path, "blocks.0.attn.rel_pos_h.bin", (27, 80)
+    )
+    tensorrt_llm_sam.blocks[0].attn.rel_pos_w.value = fromfile(
+        dir_path, "blocks.0.attn.rel_pos_w.bin", (27, 80)
+    )
+    tensorrt_llm_sam.blocks[0].attn.qkv.weight.value = fromfile(
+        dir_path, "blocks.0.attn.qkv.weight.bin", (3840, 1280)
+    )
+    tensorrt_llm_sam.blocks[0].attn.qkv.bias.value = fromfile(
+        dir_path, "blocks.0.attn.qkv.bias.bin"
+    )
+    tensorrt_llm_sam.blocks[0].attn.proj.weight.value = fromfile(
+        dir_path, "blocks.0.attn.proj.weight.bin", (1280, 1280)
+    )
+    tensorrt_llm_sam.blocks[0].attn.proj.bias.value = fromfile(
+        dir_path, "blocks.0.attn.proj.bias.bin"
     )
 
     tok = time.time()
@@ -71,6 +91,12 @@ if __name__ == "__main__":
         img_size=1024,
         patch_size=16,
         embed_dim=1280,
+        num_heads=16,
+        mlp_ratio=4,
+        out_chans=256,
+        qkv_bias=True,
+        use_rel_pos=True,
+        depth=32,
         window_size=14,
         global_attn_indexes=[7, 15, 23, 31]
     )

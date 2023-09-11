@@ -1,12 +1,13 @@
+import numpy as np
 import tensorrt as trt
 from typing import Optional, Tuple, Union
 from tensorrt_llm.module import Module, ModuleList
 from tensorrt_llm.parameter import Parameter
-from tensorrt_llm.layers import LayerNorm, Conv2d
-from tensorrt_llm.functional import Tensor
-from tensorrt_llm._utils import str_dtype_to_trt
+from tensorrt_llm.layers import LayerNorm, Conv2d, Linear
+from tensorrt_llm.functional import Tensor, matmul, softmax
+from tensorrt_llm._utils import str_dtype_to_trt, str_dtype_to_np
 
-from .functional import window_partition
+from .functional import window_partition, add_decomposed_rel_pos
 
 
 class TestModel(Module):
@@ -78,6 +79,7 @@ class ImageEncoderViT(Module):
                 rel_pos_zero_init=rel_pos_zero_init,
                 window_size=window_size if i not in global_attn_indexes else 0,
                 input_size=(img_size // patch_size, img_size // patch_size),
+                dtype=dtype
             )
             blocks.append(block)
         self.blocks = ModuleList(blocks)
@@ -120,6 +122,15 @@ class Block(Module):
     ) -> None:
         super().__init__()
         self.norm1 = LayerNorm(dim, dtype=dtype)
+        self.attn = Attention(
+            dim,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            use_rel_pos=use_rel_pos,
+            rel_pos_zero_init=rel_pos_zero_init,
+            input_size=input_size if window_size == 0 else (window_size, window_size),
+            dtype=dtype
+        )
         self.window_size = window_size
 
     def forward(self, x):
@@ -127,10 +138,77 @@ class Block(Module):
         x = self.norm1(x)
 
         # Window partition
-        # H, W = x.shape[1], x.shape[2]
-        x, pad_hw = window_partition(x, self.window_size)
+        if self.window_size > 0:
+            H, W = x.shape[1], x.shape[2]
+            x, pad_hw = window_partition(x, self.window_size)
 
-        # Reverse window partition
+        x = self.attn(x)
+
+        # # Reverse window partition
+        # if self.window_size > 0:
+        #     x = window_unpartition(x, self.window_size, pad_hw, (H, W))
+
+        return x
+
+
+class Attention(Module):
+    """Multi-head Attention block with relative position embeddings."""
+
+    def __init__(
+            self,
+            dim: int,
+            num_heads: int,
+            qkv_bias: bool = True,
+            use_rel_pos: bool = False,
+            rel_pos_zero_init: bool = True,
+            input_size: Optional[Tuple[int, int]] = None,
+            dtype: str = "float32"
+            ):
+        super().__init__()
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = head_dim**-0.5
+
+        self.dtype = dtype
+
+        self.qkv = Linear(dim, dim * 3, bias=qkv_bias, dtype=str_dtype_to_trt(dtype))
+        self.proj = Linear(dim, dim, dtype=str_dtype_to_trt(dtype))
+
+        self.use_rel_pos = use_rel_pos
+        if self.use_rel_pos:
+            assert (
+                input_size is not None
+            ), "Input size must be provided if using relative positional encoding."
+            np_dtype = str_dtype_to_np(dtype)
+            # initialize relative positional embeddings
+            self.rel_pos_h = Parameter(np.zeros((2 * input_size[0] - 1, head_dim), dtype=np_dtype))
+            self.rel_pos_w = Parameter(np.zeros((2 * input_size[1] - 1, head_dim), dtype=np_dtype))
+
+    def forward(self, x):
+        B, H, W, _ = x.shape
+        # qkv with shape (3, B, nHead, H * W, C)
+        qkv = self.qkv(x).view((B, H * W, 3, self.num_heads, -1)).permute((2, 0, 3, 1, 4))
+        # q, k, v with shape (B * nHead, H * W, C)
+        # TODO: try option2
+        # option 1
+        qkv = qkv.view((3, B * self.num_heads, H * W, -1))
+        q, k, v = qkv.split(1, dim=0)
+        q = q.view((B * self.num_heads, H * W, -1))
+        k = k.view((B * self.num_heads, H * W, -1))
+        v = v.view((B * self.num_heads, H * W, -1))
+        # # option 2
+        # qkv = qkv.view((3 * B * self.num_heads, H * W, -1))
+        # q, k, v = qkv.split(B * self.num_heads, dim=0)
+
+        attn = matmul(q * self.scale, k.transpose(-2, -1))
+
+        if self.use_rel_pos:
+            attn = add_decomposed_rel_pos(attn, q, self.rel_pos_h.value, self.rel_pos_w.value, (H, W), (H, W))
+
+        attn = softmax(attn, dim=-1)
+        x = (matmul(attn, v)).view((B, self.num_heads, H, W, -1)).permute((0, 2, 3, 1, 4)).view((B, H, W, -1))
+        x = self.proj(x)
+
         return x
 
 
