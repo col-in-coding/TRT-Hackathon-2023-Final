@@ -4,10 +4,10 @@ from typing import Optional, Tuple, Union
 from tensorrt_llm.module import Module, ModuleList
 from tensorrt_llm.parameter import Parameter
 from tensorrt_llm.layers import LayerNorm, Conv2d, Linear
-from tensorrt_llm.functional import Tensor, matmul, softmax
+from tensorrt_llm.functional import Tensor, matmul, softmax, gelu
 from tensorrt_llm._utils import str_dtype_to_trt, str_dtype_to_np
 
-from .functional import window_partition, add_decomposed_rel_pos
+from .functional import window_partition, add_decomposed_rel_pos, window_unpartition
 
 
 class TestModel(Module):
@@ -68,7 +68,7 @@ class ImageEncoderViT(Module):
 
         blocks = []
         # FOR TEST
-        depth = 1
+        # depth = 1
         for i in range(depth):
             block = Block(
                 dim=embed_dim,
@@ -131,10 +131,13 @@ class Block(Module):
             input_size=input_size if window_size == 0 else (window_size, window_size),
             dtype=dtype
         )
+        self.norm2 = LayerNorm(dim, dtype=dtype)
+        self.mlp = MLPBlock(embedding_dim=dim, mlp_dim=int(dim * mlp_ratio), dtype=dtype)
+
         self.window_size = window_size
 
     def forward(self, x):
-        # shortcut = x
+        shortcut = x
         x = self.norm1(x)
 
         # Window partition
@@ -144,9 +147,12 @@ class Block(Module):
 
         x = self.attn(x)
 
-        # # Reverse window partition
-        # if self.window_size > 0:
-        #     x = window_unpartition(x, self.window_size, pad_hw, (H, W))
+        # Reverse window partition
+        if self.window_size > 0:
+            x = window_unpartition(x, self.window_size, pad_hw, (H, W))
+
+        x = shortcut + x
+        x = x + self.mlp(self.norm2(x))
 
         return x
 
@@ -181,8 +187,8 @@ class Attention(Module):
             ), "Input size must be provided if using relative positional encoding."
             np_dtype = str_dtype_to_np(dtype)
             # initialize relative positional embeddings
-            self.rel_pos_h = Parameter(np.zeros((2 * input_size[0] - 1, head_dim), dtype=np_dtype))
-            self.rel_pos_w = Parameter(np.zeros((2 * input_size[1] - 1, head_dim), dtype=np_dtype))
+            self.rel_pos_h = Parameter(np.zeros((2 * input_size[0] - 1, head_dim), dtype=np_dtype), dtype=dtype)
+            self.rel_pos_w = Parameter(np.zeros((2 * input_size[1] - 1, head_dim), dtype=np_dtype), dtype=dtype)
 
     def forward(self, x):
         B, H, W, _ = x.shape
@@ -246,3 +252,19 @@ class PatchEmbed(Module):
         # B C H W -> B H W C
         x = x.permute((0, 2, 3, 1))
         return x
+
+
+class MLPBlock(Module):
+    def __init__(
+        self,
+        embedding_dim: int,
+        mlp_dim: int,
+        dtype: Union[str, trt.DataType] = "float32"
+    ) -> None:
+        super().__init__()
+        self.lin1 = Linear(embedding_dim, mlp_dim, dtype=dtype)
+        self.lin2 = Linear(mlp_dim, embedding_dim, dtype=dtype)
+        self.act = gelu
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.lin2(self.act(self.lin1(x)))

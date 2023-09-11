@@ -46,32 +46,62 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
         dir_path, "pos_embed.bin", (1, 64, 64, 1280)
     )
 
-    # Blocks
-    tensorrt_llm_sam.blocks[0].norm1.weight.value = fromfile(
-        dir_path, "blocks.0.norm1.weight.bin"
-    )
-    tensorrt_llm_sam.blocks[0].norm1.bias.value = fromfile(
-        dir_path, "blocks.0.norm1.bias.bin"
-    )
+    global_attn_indexes = [7, 15, 23, 31]
 
-    tensorrt_llm_sam.blocks[0].attn.rel_pos_h.value = fromfile(
-        dir_path, "blocks.0.attn.rel_pos_h.bin", (27, 80)
-    )
-    tensorrt_llm_sam.blocks[0].attn.rel_pos_w.value = fromfile(
-        dir_path, "blocks.0.attn.rel_pos_w.bin", (27, 80)
-    )
-    tensorrt_llm_sam.blocks[0].attn.qkv.weight.value = fromfile(
-        dir_path, "blocks.0.attn.qkv.weight.bin", (3840, 1280)
-    )
-    tensorrt_llm_sam.blocks[0].attn.qkv.bias.value = fromfile(
-        dir_path, "blocks.0.attn.qkv.bias.bin"
-    )
-    tensorrt_llm_sam.blocks[0].attn.proj.weight.value = fromfile(
-        dir_path, "blocks.0.attn.proj.weight.bin", (1280, 1280)
-    )
-    tensorrt_llm_sam.blocks[0].attn.proj.bias.value = fromfile(
-        dir_path, "blocks.0.attn.proj.bias.bin"
-    )
+    depth = 32
+    for i in range(depth):
+        # Blocks
+        tensorrt_llm_sam.blocks[i].norm1.weight.value = fromfile(
+            dir_path, f"blocks.{i}.norm1.weight.bin"
+        )
+        tensorrt_llm_sam.blocks[i].norm1.bias.value = fromfile(
+            dir_path, f"blocks.{i}.norm1.bias.bin"
+        )
+        if i in global_attn_indexes:
+            tensorrt_llm_sam.blocks[i].attn.rel_pos_h.value = fromfile(
+                dir_path, f"blocks.{i}.attn.rel_pos_h.bin", (127, 80)
+            )
+            tensorrt_llm_sam.blocks[i].attn.rel_pos_w.value = fromfile(
+                dir_path, f"blocks.{i}.attn.rel_pos_w.bin", (127, 80)
+            )
+        else:
+            tensorrt_llm_sam.blocks[i].attn.rel_pos_h.value = fromfile(
+                dir_path, f"blocks.{i}.attn.rel_pos_h.bin", (27, 80)
+            )
+            tensorrt_llm_sam.blocks[i].attn.rel_pos_w.value = fromfile(
+                dir_path, f"blocks.{i}.attn.rel_pos_w.bin", (27, 80)
+            )
+
+        tensorrt_llm_sam.blocks[i].attn.qkv.weight.value = fromfile(
+            dir_path, f"blocks.{i}.attn.qkv.weight.bin", (3840, 1280)
+        )
+        tensorrt_llm_sam.blocks[i].attn.qkv.bias.value = fromfile(
+            dir_path, f"blocks.{i}.attn.qkv.bias.bin"
+        )
+        tensorrt_llm_sam.blocks[i].attn.proj.weight.value = fromfile(
+            dir_path, f"blocks.{i}.attn.proj.weight.bin", (1280, 1280)
+        )
+        tensorrt_llm_sam.blocks[i].attn.proj.bias.value = fromfile(
+            dir_path, f"blocks.{i}.attn.proj.bias.bin"
+        )
+        tensorrt_llm_sam.blocks[i].norm2.weight.value = fromfile(
+            dir_path, f"blocks.{i}.norm2.weight.bin"
+        )
+        tensorrt_llm_sam.blocks[i].norm2.bias.value = fromfile(
+            dir_path, f"blocks.{i}.norm2.bias.bin"
+        )
+        tensorrt_llm_sam.blocks[i].mlp.lin1.weight.value = fromfile(
+            dir_path, f"blocks.{i}.mlp.lin1.weight.bin", (5120, 1280)
+        )
+        tensorrt_llm_sam.blocks[i].mlp.lin1.bias.value = fromfile(
+            dir_path, f"blocks.{i}.mlp.lin1.bias.bin"
+        )
+        tensorrt_llm_sam.blocks[i].mlp.lin2.weight.value = fromfile(
+            dir_path, f"blocks.{i}.mlp.lin2.weight.bin", (1280, 5120)
+        )
+        tensorrt_llm_sam.blocks[i].mlp.lin2.bias.value = fromfile(
+            dir_path, f"blocks.{i}.mlp.lin2.bias.bin"
+        )
 
     tok = time.time()
     t = time.strftime('%H:%M:%S', time.gmtime(tok - tik))
