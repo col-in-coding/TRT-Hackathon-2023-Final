@@ -72,7 +72,7 @@ class SAMGenerationSession(object):
 
         self.buffer = {
             'output':
-            torch.empty((batch_size, 64, 64, 1280),
+            torch.empty((batch_size, 256, 64, 64),
                         dtype=tensor_dtype('output'),
                         device=self.device)
         }

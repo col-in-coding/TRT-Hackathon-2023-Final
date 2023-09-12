@@ -103,6 +103,25 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
             dir_path, f"blocks.{i}.mlp.lin2.bias.bin"
         )
 
+    tensorrt_llm_sam.neck.conv1.weight.value = fromfile(
+        dir_path, "neck.0.weight.bin", (256, 1280, 1, 1)
+    )
+    tensorrt_llm_sam.neck.norm1.weight.value = fromfile(
+        dir_path, "neck.1.weight.bin", (256, 1, 1)
+    )
+    tensorrt_llm_sam.neck.norm1.bias.value = fromfile(
+        dir_path, "neck.1.bias.bin", (256, 1, 1)
+    )
+    tensorrt_llm_sam.neck.conv2.weight.value = fromfile(
+        dir_path, "neck.2.weight.bin", (256, 256, 3, 3)
+    )
+    tensorrt_llm_sam.neck.norm2.weight.value = fromfile(
+        dir_path, "neck.3.weight.bin", (256, 1, 1)
+    )
+    tensorrt_llm_sam.neck.norm2.bias.value = fromfile(
+        dir_path, "neck.3.bias.bin", (256, 1, 1)
+    )
+
     tok = time.time()
     t = time.strftime('%H:%M:%S', time.gmtime(tok - tik))
     tensorrt_llm.logger.info(f'Weights loaded. Total time: {t}')

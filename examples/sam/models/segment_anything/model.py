@@ -4,7 +4,7 @@ from typing import Optional, Tuple, Union
 from tensorrt_llm.module import Module, ModuleList
 from tensorrt_llm.parameter import Parameter
 from tensorrt_llm.layers import LayerNorm, Conv2d, Linear
-from tensorrt_llm.functional import Tensor, matmul, softmax, gelu
+from tensorrt_llm.functional import Tensor, matmul, softmax, gelu, pow
 from tensorrt_llm._utils import str_dtype_to_trt, str_dtype_to_np
 
 from .functional import window_partition, add_decomposed_rel_pos, window_unpartition
@@ -83,6 +83,7 @@ class ImageEncoderViT(Module):
             )
             blocks.append(block)
         self.blocks = ModuleList(blocks)
+        self.neck = Neck(embed_dim, out_chans, dtype=dtype)
 
     def forward(self, x: Tensor):
         x = self.patch_embed(x)
@@ -91,7 +92,7 @@ class ImageEncoderViT(Module):
         for blk in self.blocks:
             x = blk(x)
 
-        # x = self.neck(x.permute(0, 3, 1, 2))
+        x = self.neck(x.permute((0, 3, 1, 2)))
 
         x.mark_output("output", self.dtype)
         return x
@@ -157,6 +158,7 @@ class Block(Module):
         return x
 
 
+# TODO: create Attention plugin
 class Attention(Module):
     """Multi-head Attention block with relative position embeddings."""
 
@@ -254,6 +256,7 @@ class PatchEmbed(Module):
         return x
 
 
+# TODO: create gelu plugin
 class MLPBlock(Module):
     def __init__(
         self,
@@ -268,3 +271,55 @@ class MLPBlock(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.lin2(self.act(self.lin1(x)))
+
+
+# TODO: create LayerNorm2d plugin
+class LayerNorm2d(Module):
+    def __init__(
+        self,
+        num_channels: int,
+        eps: float = 1e-6,
+        dtype: Union[str, trt.DataType] = "float32"
+    ) -> None:
+        super().__init__()
+        self.weight = Parameter(shape=(num_channels, 1, 1), dtype=dtype)
+        self.bias = Parameter(shape=(num_channels, 1, 1), dtype=dtype)
+        self.eps = eps
+
+    def forward(self, x: Tensor) -> Tensor:
+        u = x.mean(1, keepdim=True)
+        s1 = pow((x - u), 2.0)
+        s = s1.mean(1, keepdim=True)
+        x = (x - u) / (s + self.eps).sqrt()
+        x = self.weight.value * x + self.bias.value
+        return x
+
+
+class Neck(Module):
+    def __init__(
+        self,
+        embed_dim,
+        out_chans,
+        dtype: Union[str, trt.DataType] = "float32"
+    ) -> None:
+        super().__init__()
+        self.conv1 = Conv2d(embed_dim,
+                            out_chans,
+                            kernel_size=(1, 1),
+                            bias=False,
+                            dtype=dtype)
+        self.norm1 = LayerNorm2d(out_chans, dtype=dtype)
+        self.conv2 = Conv2d(out_chans,
+                            out_chans,
+                            kernel_size=(3, 3),
+                            padding=(1, 1),
+                            bias=False,
+                            dtype=dtype)
+        self.norm2 = LayerNorm2d(out_chans, dtype=dtype)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.conv1(x)
+        x = self.norm1(x)
+        x = self.conv2(x)
+        x = self.norm2(x)
+        return x
