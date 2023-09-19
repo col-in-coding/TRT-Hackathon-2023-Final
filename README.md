@@ -42,40 +42,45 @@ pushd sam_models && rm sam_vit_h_4b8939.pth && wget https://dl.fbaipublicfiles.c
 python params_convert.py
 ```
 
-构建推理引擎
+构建 Image Encoder 推理引擎
 
 ```bash
 python build.py
 ```
 
-Build masker decoder onnx
+构建 Mask Decoder
 
 ```bash
+python sam/scripts/export_onnx_model.py --checkpoint=sam_models/sam_vit_h_4b8939.pth --model-type='vit_h' --return-single-mask --output=mask_decoder.onnx
 ```
 
 运行推理
 
 ```bash
-python run.py
+python run.py --point-coords 800 460 --point-labels 1
 ```
-
 
 ### 主要开发工作
 
 #### 开发工作的难点
 
-请在这一节里总结你的工作难点与亮点。
-- 如果使用 TensorRT-LLM 进行优化，描述以下方面可供选手参考：如果搭建了新模型， 请介绍模型结构有无特别之处，在模型的搭建过程中使用了什么算子，有没有通过plugin支持的新算子。如果支持新feature，请介绍这个feature具体需要修改哪些模块才能实现。如果优化已有模型，请介绍模型性能瓶颈以及解决方法。另外还可以包含工程实现以及debug过程中的难点。
+搭建新模型的时候，难点主要在于对大语言模型不是很熟，学习 TensorRT-LLM 中的示例花了不少时间。
+
+其次是并不是所有的算子在 TensorRT-LLM 的库中支持，所以需要通过TensorRT的原生api去实现，对与已经封装好的function或者layer，也要进行结果验证。
+
+最后是要进一步优化推理性能，需要手动融合部分算子。
 
 ### 开发与优化过程
 
-这一部分是报告的主体。请把自己假定为老师，为 TensorRT 或 TensorRT-LLM 的初学者讲述如何从原始模型出发，经过一系列开发步骤，得到优化后的 TensorRT 或 TensorRT-LLM 模型。或者你是如何一步步通过修改哪些模块添加了新feature的。
+1. 熟悉原始的pytorch模型的结构。
 
-建议：
+2. 通过gpt的例子熟悉 TensorRT-LLM 的模型构建与推理过程。
 
-- 分步骤讲清楚开发过程
-- 最好能介绍为什么需要某个特别步骤，通过这个特别步骤解决了什么问题
-  - 比如，通过Nsight Systems绘制timeline做了性能分析，发现attention时间占比高且有优化空间（贴图展示分析过程），所以决定要写plugin。然后介绍plugin的设计与实现，并在timeline上显示attention这一部分的性能改进。
+3. 在正式开发 TensorRT-LLM 新模型之前，先自己做了一个单层结构的小模型，把整个流程（包括权重转换，模型构建，模型推理）再手动实现了一遍。
+
+4. 正式搭建网络，这里我并不是一次搭完所有网络结构的，而是分层次一边搭建一边对比pytorch的推理结果。搭建过程中，同样是参考layers和functional中是否有可以复用的模块。发现还是有一些基本算子需要使用Tensorrt的原生库去实现，比如说padding，以前都是习惯用onnx parser去构建网络，所以只好跑去翻看了onnx parser的源码，知道padding在tensorrt中使用slice实现。
+
+5. 验证整个推理过程的结果。
 
 ### 优化效果
 
@@ -96,27 +101,7 @@ python run.py
 - 请写明云主机的软件硬件环境，方便他人参考。
 
 ### Bug报告（可选）
-
-提交bug是对TensorRT/TensorRT-LLM的另一种贡献。发现的TensorRT/TensorRT-LLM或cookbook、或文档和教程相关bug，请提交到[github issues](https://github.com/NVIDIA/trt-samples-for-hackathon-cn/issues)，并请在这里给出链接。
-
-对于每个bug，请标记上hackathon2023标签，并写好正文：
-
-- 对于cookbook或文档和教程相关bug，说清楚问题即可，不必很详细。
-- 对于TensorRT bug，首先确认在云主机上使用NGC docker + TensorRT 9.0.0.1可复现。
-- 然后填写如下模板，并请导师复核确认（前面“评分标准”已经提到，确认有效可得附加分）：
-  - Environment
-    - TensorRT 9.0.0.1
-    - Versions of CUDA, CUBLAS, CuDNN used
-    - Container used
-    - NVIDIA driver version
-  - Reproduction Steps
-    - Provide detailed reproduction steps for the issue here, including any commands run on the command line.
-  - Expected Behavior
-    - Provide a brief summary of the expected behavior of the software. Provide output files or examples if possible.
-  - Actual Behavior
-    - Describe the actual behavior of the software and how it deviates from the expected behavior. Provide output files or examples if possible.
-  - Additional Notes
-    - Provide any additional context here you think might be useful for the TensorRT team to help debug this issue (such as experiments done, potential things to investigate).
+https://github.com/NVIDIA/trt-samples-for-hackathon-cn/issues/92
 
 ### 送分题答案（可选）
 
@@ -181,7 +166,3 @@ python run.py
     [08/25/2023-07:32:19] [TRT-LLM] [I]   rougeL : 11.124766996533
     [08/25/2023-07:32:19] [TRT-LLM] [I]   rougeLsum : 13.031128048110618
     ```
-
-### 经验与体会（可选）
-
-欢迎在这里总结经验，抒发感慨。
