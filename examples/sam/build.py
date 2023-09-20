@@ -1,4 +1,6 @@
 import time
+import argparse
+import dataclasses
 import tensorrt_llm
 import numpy as np
 from pathlib import Path
@@ -9,6 +11,39 @@ from tensorrt_llm._utils import str_dtype_to_np
 from models.segment_anything.model import ImageEncoderViT
 
 logger.set_level("info")
+
+
+@dataclasses.dataclass(frozen=True)
+class ProgArgs:
+    model_dir: str
+    engine_dir: str
+    engine_name: str
+    dtype: str = "float32"
+
+    @staticmethod
+    def parse(args=None) -> 'ProgArgs':
+        parser = argparse.ArgumentParser(
+            formatter_class=argparse.RawTextHelpFormatter)
+        parser.add_argument('--model-dir',
+                            type=str,
+                            help='directory name of weights',
+                            default="c-model")
+        parser.add_argument('--engine-dir',
+                            type=str,
+                            help='directory name of output engine',
+                            default="sam_outputs")
+        parser.add_argument('--engine-name',
+                            type=str,
+                            help='directory name of output engine',
+                            default="sam_vit_h.engine")
+
+        parser.add_argument("--dtype",
+                            "-t",
+                            type=str,
+                            default="float32",
+                            choices=["float32", "float16"])
+
+        return ProgArgs(**vars(parser.parse_args(args)))
 
 
 def serialize_engine(engine, path):
@@ -28,10 +63,10 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
 
     def fromfile(dir_path, name, shape=None, dtype=None):
         dtype = np_dtype if dtype is None else dtype
-        p = dir_path + '/' + name
+        p = dir_path / name
         if Path(p).exists():
             t = np.fromfile(p, dtype=dtype)
-            print("===> ", p, t.shape)
+            # print("===> ", p, t.shape)
             if shape is not None:
                 t = t.reshape(shape)
             return t
@@ -127,13 +162,12 @@ def load_from_ft(tensorrt_llm_sam, dir_path, dtype='float32'):
     tensorrt_llm.logger.info(f'Weights loaded. Total time: {t}')
 
 
-if __name__ == "__main__":
-
-    engine_dir = "sam_outputs"
-    engine_name = "sam_vit_h.engine"
-    model_dir = "c-model"
-    dtype = "float32"
-    engine_dir = Path(engine_dir)
+def main(args):
+    engine_name = args.engine_name
+    dtype = args.dtype
+    model_dir = Path(args.model_dir) / dtype
+    engine_dir = Path(args.engine_dir)
+    engine_dir.mkdir(parents=True, exist_ok=True)
     engine_path = engine_dir / engine_name
     # Build TRT network
     trt_llm_model = ImageEncoderViT(
@@ -147,7 +181,8 @@ if __name__ == "__main__":
         use_rel_pos=True,
         depth=32,
         window_size=14,
-        global_attn_indexes=[7, 15, 23, 31]
+        global_attn_indexes=[7, 15, 23, 31],
+        dtype=dtype
     )
     load_from_ft(trt_llm_model, model_dir, dtype)
 
@@ -155,7 +190,7 @@ if __name__ == "__main__":
     builder = Builder()
     builder_config = builder.create_builder_config(
         name="sam",
-        precision="float32",
+        precision=dtype,
         timing_cache=None,
         tensor_parallel=1,
         parallel_build=False,
@@ -176,3 +211,12 @@ if __name__ == "__main__":
     config_path = engine_dir / 'config.json'
     builder.save_config(builder_config, config_path)
     serialize_engine(engine, engine_path)
+
+
+if __name__ == "__main__":
+    args = ProgArgs.parse()
+    print("\n=============== Arguments ===============")
+    for key, value in vars(args).items():
+        print(f"{key}: {value}")
+    print("========================================")
+    main(args)

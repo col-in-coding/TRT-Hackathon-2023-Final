@@ -27,18 +27,17 @@ class ProgArgs:
         parser.add_argument('--input-image',
                             type=str,
                             help='file name of input image',
-                            default="dog.jpg")
-                            # required=True)
+                            required=True)
         parser.add_argument('--point-coords',
                             nargs='+',
                             type=int,
-                            help='coordinates for selected point, example: --point-coords W0 H0 W1 H1')
-                            # required=True)
+                            help='coordinates for selected point, example: --point-coords W0 H0 W1 H1',
+                            required=True)
         parser.add_argument('--point-labels',
                             nargs='+',
                             type=int,
-                            help='labels for selected point, 1 is for selected, 0 is for unselected',)
-                            # required=True)
+                            help='labels for selected point, 1 is for selected, 0 is for unselected',
+                            required=True)
         parser.add_argument('--engine-dir',
                             type=str,
                             help='directory name of engine',

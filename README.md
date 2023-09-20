@@ -2,7 +2,7 @@
 
 ### 简介
 
-本项目为 NVIDIA TensorRT Hackathon 2023 参赛项目
+本项目为 NVIDIA TensorRT Hackathon 2023 参赛项目   
 _Team: Imagination_
 - 选题，用TensorRT-LLM实现新模型；为TensorRT-LLM添加新feature，或者在模型上启用了现有feature. (2+4)
 - 优化模型 [SAM](https://github.com/facebookresearch/segment-anything) Image Encoder (ViT-H)
@@ -17,7 +17,7 @@ Start Docker Environment
 # 进入项目根目录
 export PROJ_PATH=`pwd`
 docker run -it --rm --name=trt2023 \
--v $PROJ_PATH:/workspace -w /workspace --gpus all --user root \
+-v $PROJ_PATH:/workspace -w /workspace --network host --gpus all --user root \
 registry.cn-hangzhou.aliyuncs.com/trt-hackathon/trt-hackathon:final_v1 bash
 ```
 
@@ -32,32 +32,34 @@ rm -rf sam && git clone https://github.com/facebookresearch/segment-anything sam
 cd sam && pip install -e . && cd -
 # 下载 Vit-h 模型权重
 mkdir -p sam_models
-pushd sam_models && rm sam_vit_h_4b8939.pth && wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth && popd
+pushd sam_models && wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth && popd
 
 ```
 
 模型参数转换
 
 ```bash
-python params_convert.py
+python params_convert.py -i sam_models/sam_vit_h_4b8939.pth -o c-model --storage-type float32
 ```
 
 构建 Image Encoder 推理引擎
 
 ```bash
-python build.py
+python build.py --dtype float32
 ```
 
 构建 Mask Decoder
 
 ```bash
+# using onnxruntime for mask decoder
+pip install onnxruntime
 python sam/scripts/export_onnx_model.py --checkpoint=sam_models/sam_vit_h_4b8939.pth --model-type='vit_h' --return-single-mask --output=mask_decoder.onnx
 ```
 
 运行推理
 
 ```bash
-python run.py --point-coords 800 460 --point-labels 1
+python run.py --input-image dog.jpg --point-coords 800 460 --point-labels 1
 ```
 
 ### 主要开发工作

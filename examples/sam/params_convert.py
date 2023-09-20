@@ -7,14 +7,12 @@ from collections import OrderedDict
 from segment_anything.modeling.image_encoder import ImageEncoderViT
 from tensorrt_llm._utils import str_dtype_to_torch, torch_to_numpy
 
+
 @dataclasses.dataclass(frozen=True)
 class ProgArgs:
     out_dir: str
     in_file: str
-    tensor_parallelism: int = 1
     processes: int = 4
-    calibrate_kv_cache: bool = False
-    smoothquant: float = None
     model: str = "sam"
     storage_type: str = "fp32"
     dataset_cache_dir: str = None
@@ -35,20 +33,12 @@ class ProgArgs:
                             help='file name of input checkpoint file',
                             default="sam_models/sam_vit_h_4b8939.pth")
                             # required=True)
-        parser.add_argument(
-            "--smoothquant",
-            "-sq",
-            type=float,
-            default=None,
-            help="Set the α parameter (see https://arxiv.org/pdf/2211.10438.pdf)"
-            " to Smoothquant the model, and output int8 weights."
-            " A good first try is 0.5. Must be in [0, 1]")
 
         parser.add_argument("--storage-type",
                             "-t",
                             type=str,
                             default="float32",
-                            choices=["float32", "float16", "bfloat16"])
+                            choices=["float32", "float16"])
 
         return ProgArgs(**vars(parser.parse_args(args)))
 
@@ -72,6 +62,7 @@ def fetch_image_encoder_params(sam_ckpt):
 @torch.no_grad()
 def run_conversion(args):
     save_dir = Path(args.out_dir)
+    save_dir = save_dir / args.storage_type
     save_dir.mkdir(parents=True, exist_ok=True)
 
     model = ImageEncoderViT(
@@ -94,10 +85,7 @@ def run_conversion(args):
     storage_type = str_dtype_to_torch(args.storage_type)
 
     for name, param in model.named_parameters():
-        # if "weight" not in name and "bias" not in name:
-        #     print("useless name: ", name)
-        #     continue
-        print("===> ", name)
+        # print("===> ", name)
         ft_name = sam_to_ft_name(name)
 
         torch_to_numpy(param.to(storage_type).cpu()).tofile(
