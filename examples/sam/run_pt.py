@@ -21,11 +21,13 @@ if __name__ == "__main__":
     sam.to(device)
     predictor = SamPredictor(sam)
 
-    image = cv2.imread("jay.png")
+    image = cv2.imread("dog.jpg")
     predictor.set_image(image, image_format="BGR")
-    point_coords = np.array([[490, 324]])
+    point_coords = np.array([[800, 460]])
     point_labels = np.array([1])
-    masks, _, _ = predictor.predict(point_coords=point_coords, point_labels=point_labels)
+    masks, _, _ = predictor.predict(point_coords=point_coords,
+                                    point_labels=point_labels,
+                                    multimask_output=False)
 
     for i, mask in enumerate(masks):
         masks = image * mask[..., None]
